@@ -1,0 +1,217 @@
+// =====================================================
+// SIMULADOR DIGITAL PARA SEGUIDOR DE LÍNEA CON PID
+// No requiere sensores QTR, motores, driver ni botón
+// Solo usa el Monitor Serial
+// =====================================================
+
+const uint8_t SensorCount = 8;
+uint16_t sensorValues[SensorCount];
+
+// Constantes PID
+float KP = 1.1;
+float KD = 6.85;
+float Ki = 0.0000036;
+
+// Velocidad máxima simulada
+int Velmax = 125;
+
+// Variables PID
+int proporcional = 0;
+int integral = 0;
+int derivativo = 0;
+int diferencial = 0;
+int last_prop = 0;
+
+int Target = 3500;
+
+// Historial para integral
+int error1 = 0;
+int error2 = 0;
+int error3 = 0;
+int error4 = 0;
+int error5 = 0;
+int error6 = 0;
+
+// Motores simulados
+int motorIzquierdo = 0;
+int motorDerecho = 0;
+
+// -----------------------------------------------------
+// Secuencia simulada de la posición de la línea
+// Para 8 sensores, el rango va de 0 a 7000
+// Centro ideal = 3500
+// -----------------------------------------------------
+
+uint16_t posicionesSimuladas[] = {
+  3500, 3500, 3500,   // línea centrada
+  3000, 2500, 2000,   // línea se va a la izquierda
+  1500, 1000, 500,
+  0,                  // línea muy a la izquierda
+  500, 1000, 2000,
+  3000, 3500,         // vuelve al centro
+  4000, 4500, 5000,   // línea se va a la derecha
+  5500, 6000, 6500,
+  7000,               // línea muy a la derecha
+  6500, 6000, 5000,
+  4000, 3500          // vuelve al centro
+};
+
+int indiceSimulacion = 0;
+int totalPosiciones = sizeof(posicionesSimuladas) / sizeof(posicionesSimuladas[0]);
+
+void setup()
+{
+  Serial.begin(9600);
+
+  Serial.println("======================================");
+  Serial.println(" SIMULACION DIGITAL SEGUIDOR DE LINEA ");
+  Serial.println("======================================");
+  Serial.println("Posicion\tError\tDeriv\tIntegral\tDiff\tMotor_Izq\tMotor_Der");
+}
+
+void loop()
+{
+  // Lectura simulada de sensores
+  uint16_t position = readLineBlackSim(sensorValues);
+
+  // PID igual a tu código original
+  proporcional = int(position) - 3500;
+
+  if (proporcional <= -Target)
+  {
+    Motorde(0);
+  }
+  else if (proporcional >= Target)
+  {
+    Motoriz(0);
+  }
+
+  derivativo = proporcional - last_prop;
+  integral = error1 + error2 + error3 + error4 + error5 + error6;
+  last_prop = proporcional;
+
+  error6 = error5;
+  error5 = error4;
+  error4 = error3;
+  error3 = error2;
+  error2 = error1;
+  error1 = proporcional;
+
+  diferencial = (proporcional * KP) + (derivativo * KD) + (integral * Ki);
+
+  if (diferencial > Velmax)
+  {
+    diferencial = Velmax;
+  }
+  else if (diferencial < -Velmax)
+  {
+    diferencial = -Velmax;
+  }
+
+  if (diferencial < 0)
+  {
+    Motor(Velmax + diferencial, Velmax);
+  }
+  else
+  {
+    Motor(Velmax, Velmax - diferencial);
+  }
+
+  imprimirDatos(position);
+
+  delay(500);
+}
+
+// -----------------------------------------------------
+// Simula la función qtr.readLineBlack(sensorValues)
+// Devuelve valores entre 0 y 7000
+// -----------------------------------------------------
+
+uint16_t readLineBlackSim(uint16_t sensores[])
+{
+  uint16_t posicion = posicionesSimuladas[indiceSimulacion];
+
+  // Simulación básica de los valores de los sensores
+  // No afecta el PID, pero sirve para representar lecturas falsas.
+  for (int i = 0; i < SensorCount; i++)
+  {
+    int centroSensor = i * 1000;
+    int distancia = abs(int(posicion) - centroSensor);
+
+    if (distancia > 1000)
+    {
+      sensores[i] = 0;
+    }
+    else
+    {
+      sensores[i] = 1000 - distancia;
+    }
+  }
+
+  indiceSimulacion++;
+
+  if (indiceSimulacion >= totalPosiciones)
+  {
+    indiceSimulacion = 0;
+    Serial.println("--------------------------------------");
+    Serial.println(" Reiniciando secuencia simulada ");
+    Serial.println("--------------------------------------");
+  }
+
+  return posicion;
+}
+
+// -----------------------------------------------------
+// Motor izquierdo simulado
+// -----------------------------------------------------
+
+void Motoriz(int value)
+{
+  motorIzquierdo = constrain(value, -255, 255);
+}
+
+// -----------------------------------------------------
+// Motor derecho simulado
+// -----------------------------------------------------
+
+void Motorde(int value)
+{
+  motorDerecho = constrain(value, -255, 255);
+}
+
+// -----------------------------------------------------
+// Accionamiento de motores simulado
+// -----------------------------------------------------
+
+void Motor(int left, int right)
+{
+  Motoriz(left);
+  Motorde(right);
+}
+
+// -----------------------------------------------------
+// Imprime resultados en el Monitor Serial
+// -----------------------------------------------------
+
+void imprimirDatos(uint16_t position)
+{
+  Serial.print(position);
+  Serial.print("\t\t");
+
+  Serial.print(proporcional);
+  Serial.print("\t");
+
+  Serial.print(derivativo);
+  Serial.print("\t");
+
+  Serial.print(integral);
+  Serial.print("\t\t");
+
+  Serial.print(diferencial);
+  Serial.print("\t");
+
+  Serial.print(motorIzquierdo);
+  Serial.print("\t\t");
+
+  Serial.println(motorDerecho);
+}

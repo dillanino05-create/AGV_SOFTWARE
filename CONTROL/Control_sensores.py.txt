@@ -1,0 +1,243 @@
+#include <QTRSensors.h>
+QTRSensors qtr;
+const uint8_t SensorCount = 8;
+uint16_t sensorValues[SensorCount];
+
+
+// Constantes para PID
+float KP = 1.1; //1.05
+float KD = 6.85; // 6.80
+float Ki = 0.0000036; // 0.0000033
+
+// Regulación de la velocidad Máxima
+int Velmax = 125; //90
+
+
+unsigned int position = 0; 
+
+//declaraos variables para utilizar PID
+int proporcional = 0;         // Proporcional
+int integral = 0;           //Intrgral
+int derivativo = 0;          // Derivativo
+     
+
+
+
+int diferencial = 0;   // Diferencia aplicada a los motores
+int last_prop;         // Última valor del proporcional (utilizado para calcular la derivada del error)
+int Target = 3500; // Setpoint (Como utilizamos 6 sensores, la línea debe estar entre 0 y 5000, por lo que el ideal es que esté en 2500)
+
+
+
+//#define buzzer    4
+
+
+#define btn1      9
+//#define btn2      4
+
+
+// Mapeo de pines A derecho B izquierdo
+#define AIN1 5     // Entrada 1 del motor A
+#define AIN2 4     // Entrada 2 del motor A
+#define PWMB 11    // Control de velocidad PWM del motor B
+#define PWMA 3   // Control de velocidad PWM del motor A
+#define BIN1 7    // Entrada 1 del motor B
+#define BIN2 6     // Entrada 2 del motor B
+#define LED 13     // LED integrado en la placa
+//#define STBY 13     // LED integrado en la placa
+
+
+
+
+// Data para intrgal 
+int error1=0;
+int error2=0;
+int error3=0;
+int error4=0;
+int error5=0;
+int error6=0;
+
+/////////////////////////////////////////////////////////
+int boton1=0;
+int boton2=0;
+
+
+
+
+
+
+
+void setup()
+{
+  // Configuración de sensores QTR-4RC
+  qtr.setTypeAnalog();
+  qtr.setSensorPins((const uint8_t[]){A0, A1, A2, A3, A4, A5, A6, A7}, SensorCount);
+  qtr.setEmitterPin(13);
+  pinMode(btn1, INPUT_PULLUP);
+  //pinMode(btn2, INPUT);
+  
+  //pinMode(buzzer, OUTPUT); 
+
+  Serial.begin(9600);
+  // Declaramos como salida los pines utilizados (sin STBY)
+  pinMode(LED, OUTPUT);
+  //pinMode(STBY, OUTPUT);
+  pinMode(BIN2, OUTPUT);
+  // Eliminamos la siguiente línea que declara STBY como salida
+  // pinMode(STBY, OUTPUT);
+  pinMode(BIN1, OUTPUT);
+  pinMode(PWMB, OUTPUT);
+  pinMode(AIN1, OUTPUT);
+  pinMode(AIN2, OUTPUT);
+  pinMode(PWMA, OUTPUT);
+  //digitalWrite(STBY, HIGH);
+  digitalWrite(LED, HIGH);
+
+
+
+
+
+  digitalWrite(LED, HIGH);
+  delay(1000);
+  digitalWrite(LED, LOW);
+  delay(1000); 
+  digitalWrite(LED, HIGH);
+  delay(1000);
+  digitalWrite(LED, LOW);
+  delay(1000); 
+  digitalWrite(LED, HIGH);
+  delay(200);
+  digitalWrite(LED, LOW);
+  delay(200);
+  digitalWrite(LED, HIGH);
+  delay(200);
+  digitalWrite(LED, LOW);
+  delay(200);
+  digitalWrite(LED, HIGH);
+  delay(500);
+
+
+
+ for (uint16_t i = 0; i < 300; i++)
+  {
+    qtr.calibrate();
+  }
+  digitalWrite(LED, LOW);
+  delay(100);
+
+  
+
+
+  while(true)
+   {
+      botones();
+      if(boton2==0) {
+      delay(200);
+       break;
+      }
+
+  uint16_t position = qtr.readLineBlack(sensorValues);
+        digitalWrite(LED, HIGH);
+      delay(200);
+      digitalWrite(LED, LOW);
+      delay(200);
+
+}
+}
+
+
+
+void loop()
+{ 
+  
+
+
+    uint16_t position = qtr.readLineBlack(sensorValues);
+    proporcional = (int(position) - 3500);
+
+
+    if ( proporcional <= -Target )
+    {
+      Motorde(0);
+    }
+    else if ( proporcional >= Target )
+    {
+      Motoriz(0);
+    }
+    
+    derivativo = proporcional - last_prop; 
+    integral = error1+error2+error3+error4+error5+error6;
+    last_prop = proporcional;
+    
+
+    error6=error5;
+    error5=error4;  
+    error4=error3;  
+    error3=error2;
+    error2=error1;
+    error1=proporcional;
+
+  
+    int diferencial = ( proporcional * KP ) + ( derivativo * KD )+ (integral*Ki) ;
+    
+    if ( diferencial > Velmax ) diferencial = Velmax; 
+    else if ( diferencial < -Velmax ) diferencial = -Velmax;
+
+    ( diferencial < 0 ) ? 
+      Motor(Velmax+diferencial, Velmax) : Motor(Velmax, Velmax-diferencial);
+    
+}
+
+
+
+
+// Función accionamiento motor izquierdo
+void Motoriz(int value)
+{
+  if ( value >= 0 )
+  {
+    digitalWrite(BIN1,HIGH);
+    digitalWrite(BIN2,LOW);
+  }
+  else
+  {
+    digitalWrite(BIN1,LOW);
+    digitalWrite(BIN2,HIGH);
+    value *= -1;
+  }
+  analogWrite(PWMB,value);
+}
+
+// Función accionamiento motor derecho
+void Motorde(int value)
+{  
+  if ( value < 0 )
+  {
+    digitalWrite(AIN1,HIGH);
+    digitalWrite(AIN2,LOW);
+    value *= -1;
+  }
+  else
+  {
+    digitalWrite(AIN1,LOW);
+    digitalWrite(AIN2,HIGH);
+  }    
+  analogWrite(PWMA, value);
+}
+
+
+
+
+
+//Accionamiento de motores
+void Motor(int left, int righ)
+{
+  Motoriz(left);
+  Motorde(righ);
+}
+
+void botones()
+{
+    //boton1=digitalRead(btn2);
+    boton2=digitalRead(btn1); ///boton izquierdo, derecho
+}
