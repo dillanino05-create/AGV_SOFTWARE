@@ -1,0 +1,11 @@
+# Target
+CONFIG_IDF_TARGET="esp32s3"
+
+# Deshabilitar WPA3 completamente — forzar WPA2 puro
+CONFIG_ESP_WIFI_ENABLED=y
+CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=n
+CONFIG_ESP_WIFI_SOFTAP_SAE_SUPPORT=n
+CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
+
+# Mostrar logs de nivel INFO (conexion WiFi, IP obtenida, estado de motores, etc.)
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
