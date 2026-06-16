@@ -1,0 +1,38 @@
+Motores izquierdos
+Enconder:
+Enconder izquierdo 1 (motor izquierdo delantero) 
+Enc3b = 37 (IO40) 
+Enc3A = 38 (IO41) 
+Enconder izquierdo 2 (Motor izquierdo trasero) 
+Enc4b = 35 (IO38)
+Enc4A = 36 (IO39) 
+Puente H TB6612FNG Izquierdo 
+STBY = Standby = 14(I046) 
+PWMA = PWMB = PWMIZQUIERDO = 15 (IO9)
+AIN2 = BIN2 = IN2IZQUIERDO = 16 (IO10) 
+AIN1 = BIN1 = IN1IZQUIERDO = 17 (IO11)
+Motor izquierdo 1 (Motor izquierdo delantero) 
+A1 = A1IZ = ADELANTE o POSITIVO
+A2 = A2IZ = REVERSA o NEGATIVO
+izquierdo 2 (Motor izquierdo trasero) 
+B1 = B1IZ = ADELANTE o POSITIVO
+B2 = B2IZ = REVERSA o NEGATIVO
+MOTORES DERECHOS
+Enconder:
+Enconder derecho 1 (motor derecho delantero) 
+Enc1b = 41 (IO1) 
+Enc1a = 4 (IO4) 
+Enconder derecho 2 (Motor derecho trasero) 
+Enc2b = 39 (IO42) 
+Enc2A = 40 (IO2) 
+Puente H TB6612FNG derecho 
+STBY = Standby = 14(I046) 
+PWMA = PWMB = PWMDERECHO = 18 (IO12) 
+AIN2 = BIN2 = IN2DERECHO = 19 (IO13)
+AIN1 = BIN1 = IN1DERECHO = 20 (IO14) 	
+Motor derecho 1 (Motor derecho delantero) 
+A1 = A1D = ADELANTE o POSITIVO
+A2 = A2D= REVERSA o NEGATIVO
+Motor derecho 2 (Motor derecho trasero) 
+B1 = B1D = ADELANTE o POSITIVO
+B2 = B2D = REVERSA o NEGATIVO
