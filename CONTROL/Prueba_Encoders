@@ -1,0 +1,357 @@
+// ======================================================
+// ESP32-S3 + TB6612FNG + 2 motores N20 con encoders
+// Control de velocidad usando SOLO el motor delantero
+// Entrada de velocidad en cm/s
+// ======================================================
+
+// ----------------------
+// Pines TB6612FNG
+// Ambos motores comparten PWM y dirección
+// ----------------------
+#define PWM_DER 12
+#define IN2_DER 13
+#define IN1_DER 14
+#define STBY    46
+
+// ----------------------
+// Encoder motor delantero
+// ----------------------
+#define ENC_FRONT_C2 40
+#define ENC_FRONT_C1 41
+
+// ----------------------
+// Encoder motor trasero
+// ----------------------
+#define ENC_REAR_C2 17
+#define ENC_REAR_C1 16
+
+// ======================================================
+// Parámetros físicos del robot
+// ======================================================
+
+// CAMBIAR según tu rueda real.
+// Ejemplo: rueda de 43 mm = 4.30 cm
+const float WHEEL_DIAMETER_CM = 4.30;
+
+// CAMBIAR según tu encoder + relación de reducción.
+// Este valor depende del motor N20 específico.
+// Ejemplo común: 11 PPR * 30 reducción * 4 cambios = 1320 ticks/vuelta de rueda
+const float TICKS_PER_WHEEL_REV = 1320.0;
+
+const float WHEEL_CIRCUMFERENCE_CM = 3.14159265 * WHEEL_DIAMETER_CM;
+
+// ======================================================
+// Control de velocidad
+// ======================================================
+
+const unsigned long SAMPLE_TIME_MS = 100;
+
+// Velocidad objetivo en cm/s.
+// Se puede cambiar desde el monitor serial.
+float targetCmS = 10.0;
+
+// Ganancias PI.
+// Si responde lento, sube Kp.
+// Si no alcanza la velocidad, sube un poco Ki.
+// Si oscila mucho, baja Kp o Ki.
+float Kp = 6.0;
+float Ki = 2.0;
+
+float pwmCommand = 0;
+float integralError = 0;
+
+// PWM mínimo para vencer fricción.
+// Si los motores no arrancan, sube este valor.
+const int PWM_MIN_MOVE = 35;
+const int PWM_MAX_VALUE = 255;
+
+// Signos de encoder.
+// Si al avanzar la velocidad sale negativa, cambia el signo correspondiente.
+int FRONT_ENCODER_SIGN = 1;
+int REAR_ENCODER_SIGN  = 1;
+
+// ======================================================
+// Variables de encoder
+// ======================================================
+
+volatile long ticksFront = 0;
+volatile long ticksRear = 0;
+
+volatile uint8_t lastStateFront = 0;
+volatile uint8_t lastStateRear = 0;
+
+// Tabla para decodificación de encoder en cuadratura
+const int8_t encoderTable[16] = {
+  0, -1,  1,  0,
+  1,  0,  0, -1,
+ -1,  0,  0,  1,
+  0,  1, -1,  0
+};
+
+// ======================================================
+// Encoder delantero
+// ======================================================
+
+void IRAM_ATTR updateFrontEncoder() {
+  uint8_t c1 = digitalRead(ENC_FRONT_C1);
+  uint8_t c2 = digitalRead(ENC_FRONT_C2);
+
+  uint8_t currentState = (c1 << 1) | c2;
+  lastStateFront = ((lastStateFront << 2) | currentState) & 0x0F;
+
+  ticksFront += encoderTable[lastStateFront];
+}
+
+// ======================================================
+// Encoder trasero
+// ======================================================
+
+void IRAM_ATTR updateRearEncoder() {
+  uint8_t c1 = digitalRead(ENC_REAR_C1);
+  uint8_t c2 = digitalRead(ENC_REAR_C2);
+
+  uint8_t currentState = (c1 << 1) | c2;
+  lastStateRear = ((lastStateRear << 2) | currentState) & 0x0F;
+
+  ticksRear += encoderTable[lastStateRear];
+}
+
+// ======================================================
+// Conversión de ticks/s a cm/s
+// ======================================================
+
+float ticksPerSecondToCmS(float ticksPerSecond) {
+  float wheelRevsPerSecond = ticksPerSecond / TICKS_PER_WHEEL_REV;
+  float cmPerSecond = wheelRevsPerSecond * WHEEL_CIRCUMFERENCE_CM;
+  return cmPerSecond;
+}
+
+// ======================================================
+// Movimiento
+// ======================================================
+
+void setRightMotorsForward(int pwmValue) {
+  digitalWrite(STBY, HIGH);
+
+  digitalWrite(IN1_DER, HIGH);
+  digitalWrite(IN2_DER, LOW);
+
+  analogWrite(PWM_DER, pwmValue);
+}
+
+void setRightMotorsBackward(int pwmValue) {
+  digitalWrite(STBY, HIGH);
+
+  digitalWrite(IN1_DER, LOW);
+  digitalWrite(IN2_DER, HIGH);
+
+  analogWrite(PWM_DER, pwmValue);
+}
+
+void stopRightMotors() {
+  analogWrite(PWM_DER, 0);
+
+  digitalWrite(IN1_DER, LOW);
+  digitalWrite(IN2_DER, LOW);
+
+  pwmCommand = 0;
+  integralError = 0;
+}
+
+void brakeRightMotors() {
+  digitalWrite(IN1_DER, HIGH);
+  digitalWrite(IN2_DER, HIGH);
+
+  analogWrite(PWM_DER, 255);
+
+  pwmCommand = 0;
+  integralError = 0;
+}
+
+// ======================================================
+// Setup
+// ======================================================
+
+void setup() {
+  Serial.begin(115200);
+  Serial.setTimeout(20);
+
+  pinMode(PWM_DER, OUTPUT);
+  pinMode(IN1_DER, OUTPUT);
+  pinMode(IN2_DER, OUTPUT);
+  pinMode(STBY, OUTPUT);
+
+  digitalWrite(STBY, HIGH);
+
+  pinMode(ENC_FRONT_C1, INPUT_PULLUP);
+  pinMode(ENC_FRONT_C2, INPUT_PULLUP);
+
+  pinMode(ENC_REAR_C1, INPUT_PULLUP);
+  pinMode(ENC_REAR_C2, INPUT_PULLUP);
+
+  lastStateFront = (digitalRead(ENC_FRONT_C1) << 1) | digitalRead(ENC_FRONT_C2);
+  lastStateRear  = (digitalRead(ENC_REAR_C1) << 1) | digitalRead(ENC_REAR_C2);
+
+  attachInterrupt(digitalPinToInterrupt(ENC_FRONT_C1), updateFrontEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENC_FRONT_C2), updateFrontEncoder, CHANGE);
+
+  attachInterrupt(digitalPinToInterrupt(ENC_REAR_C1), updateRearEncoder, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(ENC_REAR_C2), updateRearEncoder, CHANGE);
+
+  Serial.println("Sistema iniciado.");
+  Serial.println("Controlando velocidad usando SOLO el motor delantero.");
+  Serial.println("Ingresa velocidad objetivo en cm/s.");
+  Serial.println("Ejemplos:");
+  Serial.println("10  -> adelante a 10 cm/s");
+  Serial.println("-10 -> atras a 10 cm/s");
+  Serial.println("0   -> detener");
+  Serial.println();
+}
+
+// ======================================================
+// Loop principal
+// ======================================================
+
+void loop() {
+  static unsigned long lastTime = 0;
+  unsigned long currentTime = millis();
+
+  // ------------------------------------------------------
+  // Leer nueva velocidad desde monitor serial
+  // ------------------------------------------------------
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+    if (input.length() > 0) {
+      targetCmS = input.toFloat();
+
+      pwmCommand = 0;
+      integralError = 0;
+
+      Serial.print("Nueva velocidad objetivo: ");
+      Serial.print(targetCmS);
+      Serial.println(" cm/s");
+    }
+  }
+
+  // ------------------------------------------------------
+  // Control cada SAMPLE_TIME_MS
+  // ------------------------------------------------------
+  if (currentTime - lastTime >= SAMPLE_TIME_MS) {
+    float dt = (currentTime - lastTime) / 1000.0;
+    lastTime = currentTime;
+
+    long deltaFront;
+    long deltaRear;
+
+    noInterrupts();
+    deltaFront = ticksFront;
+    deltaRear = ticksRear;
+    ticksFront = 0;
+    ticksRear = 0;
+    interrupts();
+
+    // Ticks por segundo
+    float frontTicksPerSecond = FRONT_ENCODER_SIGN * deltaFront / dt;
+    float rearTicksPerSecond  = REAR_ENCODER_SIGN  * deltaRear  / dt;
+
+    // Velocidad en cm/s
+    float frontCmS = ticksPerSecondToCmS(frontTicksPerSecond);
+    float rearCmS  = ticksPerSecondToCmS(rearTicksPerSecond);
+
+    // Velocidad absoluta para control
+    float frontSpeedAbs = abs(frontCmS);
+    float rearSpeedAbs  = abs(rearCmS);
+    float targetAbs = abs(targetCmS);
+
+    // También se muestra en m/min
+    float frontMMin = frontCmS * 0.6;
+    float rearMMin  = rearCmS * 0.6;
+
+    // ------------------------------------------------------
+    // Si target es 0, detener
+    // ------------------------------------------------------
+    if (targetAbs < 0.1) {
+      stopRightMotors();
+    } else {
+      // ====================================================
+      // CONTROL PI SOLO CON MOTOR DELANTERO
+      // ====================================================
+      float error = targetAbs - frontSpeedAbs;
+
+      integralError += error * dt;
+
+      // Anti-windup
+      integralError = constrain(integralError, -100, 100);
+
+      float controlAction = Kp * error + Ki * integralError;
+
+      pwmCommand += controlAction;
+
+      pwmCommand = constrain(pwmCommand, 0, PWM_MAX_VALUE);
+
+      if (pwmCommand > 0 && pwmCommand < PWM_MIN_MOVE) {
+        pwmCommand = PWM_MIN_MOVE;
+      }
+
+      int pwmOut = (int)pwmCommand;
+
+      if (targetCmS > 0) {
+        setRightMotorsForward(pwmOut);
+      } else {
+        setRightMotorsBackward(pwmOut);
+      }
+    }
+
+    // ------------------------------------------------------
+    // Diferencia entre motores
+    // ------------------------------------------------------
+    float differenceCmS = abs(frontSpeedAbs - rearSpeedAbs);
+
+    float differencePercent = 0;
+    if (frontSpeedAbs > 0.5) {
+      differencePercent = 100.0 * differenceCmS / frontSpeedAbs;
+    }
+
+    // ------------------------------------------------------
+    // Monitor serial en tiempo real
+    // ------------------------------------------------------
+    Serial.print("Target: ");
+    Serial.print(targetCmS, 2);
+    Serial.print(" cm/s");
+
+    Serial.print(" | Front: ");
+    Serial.print(frontCmS, 2);
+    Serial.print(" cm/s");
+
+    Serial.print(" (");
+    Serial.print(frontMMin, 2);
+    Serial.print(" m/min)");
+
+    Serial.print(" | Rear: ");
+    Serial.print(rearCmS, 2);
+    Serial.print(" cm/s");
+
+    Serial.print(" (");
+    Serial.print(rearMMin, 2);
+    Serial.print(" m/min)");
+
+    Serial.print(" | PWM: ");
+    Serial.print(pwmCommand, 1);
+
+    Serial.print(" | Diff: ");
+    Serial.print(differenceCmS, 2);
+    Serial.print(" cm/s");
+
+    Serial.print(" | Diff %: ");
+    Serial.print(differencePercent, 1);
+    Serial.print("%");
+
+    if (differencePercent > 20 && frontSpeedAbs > 2.0) {
+      Serial.print("  <-- diferencia alta");
+    }
+
+    Serial.println();
+  }
+}
